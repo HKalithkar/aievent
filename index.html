@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event QR Suite</title>
+    <!-- 1. Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 2. SheetJS (for reading Excel/CSV) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- 3. QR Code Generator -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- 4. QR Code Scanner -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <!-- 5. JSZip (for downloading all as .zip) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- 6. FileSaver.js (to save the .zip) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    
+    <style>
+        /* Custom styles */
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        /* Ensure the scanner video feed doesn't get distorted */
+        #qr-reader video {
+            width: 100% !important;
+            height: auto !important;
+            border-radius: 8px;
+        }
+        /* Hide spinner on file input */
+        input[type="file"]::-webkit-file-upload-button {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen text-gray-900">
+
+    <div class="max-w-4xl mx-auto p-4 sm:p-8">
+        <h1 class="text-4xl font-bold text-center text-blue-600 mb-8">
+            Event QR Suite
+        </h1>
+
+        <!-- Tab Navigation -->
+        <div class="flex justify-center mb-8 border-b border-gray-300">
+            <button id="tab-generator" onclick="showGenerator()" class="py-3 px-6 text-lg font-medium text-blue-600 border-b-4 border-blue-600">
+                Generator
+            </button>
+            <button id="tab-scanner" onclick="showScanner()" class="py-3 px-6 text-lg font-medium text-gray-500 border-b-4 border-transparent hover:text-blue-500">
+                Scanner
+            </button>
+        </div>
+
+        <!-- ====== GENERATOR PAGE ====== -->
+        <div id="page-generator" class="bg-white rounded-xl shadow-lg p-6 sm:p-8">
+            <h2 class="text-2xl font-semibold mb-4">1. Upload Your Attendee List</h2>
+            <p class="text-gray-600 mb-4">
+                Upload a `.csv`, `.xls`, or `.xlsx` file. Ensure your first sheet has columns (case-sensitive):
+                <code class="bg-gray-200 p-1 rounded-md text-sm">Name</code>, 
+                <code class="bg-gray-200 p-1 rounded-md text-sm">Designation</code>, and
+                <code class="bg-gray-200 p-1 rounded-md text-sm">Company</code>.
+            </p>
+
+            <div class="flex flex-col sm:flex-row gap-4">
+                <label class="flex-grow w-full h-12 flex items-center px-4 bg-gray-50 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-100">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-500 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    <span id="file-name" class="text-gray-700">Click to upload your file...</span>
+                    <input type='file' id="file-input" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFile(event)">
+                </label>
+                <button onclick="document.getElementById('file-input').click()" class="w-full sm:w-auto h-12 px-6 bg-blue-600 text-white font-bold rounded-lg shadow hover:bg-blue-700 transition duration-300 ease-in-out">
+                    Upload File
+                </button>
+            </div>
+            
+            <div class="mt-8">
+                <h2 class="text-2xl font-semibold mb-4">2. Download QR Codes</h2>
+                <button id="download-all-btn" onclick="downloadAllQRs()" class="w-full h-12 bg-gray-300 text-gray-500 font-bold py-2 px-5 rounded-lg cursor-not-allowed transition duration-300" disabled>
+                    Download All as ZIP
+                </button>
+            </div>
+
+            <!-- QR Code Preview Grid -->
+            <div id="qr-code-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mt-8">
+                <!-- QR codes will be dynamically inserted here -->
+            </div>
+        </div>
+
+        <!-- ====== SCANNER PAGE ====== -->
+        <div id="page-scanner" class="hidden bg-white rounded-xl shadow-lg p-6 sm:p-8">
+            <div class="flex flex-col items-center">
+                <div id="qr-reader" class="w-full max-w-md border-4 border-gray-200 rounded-lg overflow-hidden mb-4 shadow-inner">
+                    <!-- The scanner video feed will go here -->
+                </div>
+                
+                <div class="flex gap-4">
+                    <button id="start-scan-btn" onclick="startScanner()" class="bg-blue-600 text-white font-bold py-2 px-5 rounded-lg shadow hover:bg-blue-700 transition duration-300 ease-in-out">
+                        Start Scanner
+                    </button>
+                    <button id="stop-scan-btn" onclick="stopScanner()" class="hidden bg-red-600 text-white font-bold py-2 px-5 rounded-lg shadow hover:bg-red-700 transition duration-300 ease-in-out">
+                        Stop Scanner
+                    </button>
+                </div>
+
+                <!-- Scan Result -->
+                <div id="qr-scan-result" class="hidden w-full max-w-md mt-6 p-6 bg-blue-50 border-l-4 border-blue-500 rounded-lg">
+                    <h3 class="text-2xl font-bold text-blue-800 mb-3">Scan Successful!</h3>
+                    <div class="space-y-2">
+                        <p class="text-lg"><strong class="font-semibold text-gray-900">Name:</strong> <span id="result-name" class="text-gray-700"></span></p>
+                        <p class="text-lg"><strong class="font-semibold text-gray-900">Designation:</strong> <span id="result-designation" class="text-gray-700"></span></p>
+                        <p class="text-lg"><strong class="font-semibold text-gray-900">Company:</strong> <span id="result-company" class="text-gray-700"></span></p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Global State ---
+        let attendees = [];
+        let html5QrCode = null;
+
+        // --- Tab Switching Logic ---
+        const pageGenerator = document.getElementById('page-generator');
+        const pageScanner = document.getElementById('page-scanner');
+        const tabGenerator = document.getElementById('tab-generator');
+        const tabScanner = document.getElementById('tab-scanner');
+
+        function showGenerator() {
+            pageGenerator.classList.remove('hidden');
+            pageScanner.classList.add('hidden');
+            tabGenerator.classList.add('text-blue-600', 'border-blue-600');
+            tabGenerator.classList.remove('text-gray-500', 'border-transparent');
+            tabScanner.classList.add('text-gray-500', 'border-transparent');
+            tabScanner.classList.remove('text-blue-600', 'border-blue-600');
+            stopScanner(); // Stop scanner when switching tabs
+        }
+
+        function showScanner() {
+            pageScanner.classList.remove('hidden');
+            pageGenerator.classList.add('hidden');
+            tabScanner.classList.add('text-blue-600', 'border-blue-600');
+            tabScanner.classList.remove('text-gray-500', 'border-transparent');
+            tabGenerator.classList.add('text-gray-500', 'border-transparent');
+            tabGenerator.classList.remove('text-blue-600', 'border-blue-600');
+        }
+
+        // --- Generator Logic ---
+        function handleFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Update file name display
+            document.getElementById('file-name').textContent = file.name;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const json = XLSX.utils.sheet_to_json(worksheet);
+
+                // Reset
+                attendees = [];
+                document.getElementById('qr-code-grid').innerHTML = '';
+
+                // Filter and store valid attendees
+                json.forEach(row => {
+                    if (row.Name && row.Designation && row.Company) {
+                        attendees.push({
+                            Name: row.Name,
+                            Designation: row.Designation,
+                            Company: row.Company
+                        });
+                    }
+                });
+
+                if (attendees.length > 0) {
+                    generateQRPreviews();
+                    const downloadBtn = document.getElementById('download-all-btn');
+                    downloadBtn.disabled = false;
+                    downloadBtn.classList.remove('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+                    downloadBtn.classList.add('bg-green-600', 'text-white', 'hover:bg-green-700');
+                    downloadBtn.textContent = `Download All ${attendees.length} QR Codes as .zip`;
+                } else {
+                    alert('No valid attendees found. Make sure your columns are named "Name", "Designation", and "Company".');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function generateQRPreviews() {
+            const grid = document.getElementById('qr-code-grid');
+            grid.innerHTML = ''; // Clear old previews
+
+            attendees.forEach((attendee, index) => {
+                // This is the data that will be embedded in the QR code
+                const dataString = `Name: ${attendee.Name}\nDesignation: ${attendee.Designation}\nCompany: ${attendee.Company}`;
+
+                // Create the card
+                const card = document.createElement('div');
+                card.className = 'flex flex-col items-center p-4 border rounded-lg shadow-md bg-gray-50';
+
+                // Create QR code container
+                const qrDiv = document.createElement('div');
+                qrDiv.id = `qr-code-${index}`;
+                
+                // Create name label
+                const nameLabel = document.createElement('p');
+                nameLabel.className = 'font-semibold mt-3 text-center';
+                nameLabel.textContent = attendee.Name;
+
+                // Create download button for single QR
+                const downloadBtn = document.createElement('button');
+                downloadBtn.className = 'mt-2 text-sm text-blue-600 hover:underline';
+                downloadBtn.textContent = 'Download PNG';
+                downloadBtn.onclick = () => downloadSingleQR(index, attendee.Name);
+
+                card.appendChild(qrDiv);
+                card.appendChild(nameLabel);
+                card.appendChild(downloadBtn);
+                grid.appendChild(card);
+
+                // Generate the QR code
+                new QRCode(qrDiv, {
+                    text: dataString,
+                    width: 128,
+                    height: 128,
+                    colorDark: "#000000",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+            });
+        }
+
+        function downloadSingleQR(index, name) {
+            const qrDiv = document.getElementById(`qr-code-${index}`);
+            const canvas = qrDiv.getElementsByTagName('canvas')[0];
+            const dataUrl = canvas.toDataURL('image/png');
+            
+            const link = document.createElement('a');
+            link.download = `${name.replace(/ /g, '_')}_QR.png`;
+            link.href = dataUrl;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function downloadAllQRs() {
+            const zip = new JSZip();
+            const grid = document.getElementById('qr-code-grid');
+            const canvases = grid.getElementsByTagName('canvas');
+
+            Array.from(canvases).forEach((canvas, index) => {
+                const attendee = attendees[index];
+                const fileName = `${attendee.Name.replace(/ /g, '_')}.png`;
+                
+                // Get image data from canvas
+                const dataUrl = canvas.toDataURL('image/png');
+                const base64Data = dataUrl.split(',')[1]; // Get only the base64 part
+
+                // Add file to zip
+                zip.file(fileName, base64Data, { base64: true });
+            });
+
+            // Generate and save the zip file
+            zip.generateAsync({ type: 'blob' }).then((content) => {
+                saveAs(content, 'Event_QR_Codes.zip');
+            });
+        }
+
+
+        // --- Scanner Logic ---
+        function startScanner() {
+            // Hide result, show stop button
+            document.getElementById('qr-scan-result').classList.add('hidden');
+            document.getElementById('start-scan-btn').classList.add('hidden');
+            document.getElementById('stop-scan-btn').classList.remove('hidden');
+
+            try {
+                if (!html5QrCode) {
+                    html5QrCode = new Html5Qrcode("qr-reader");
+                }
+                html5QrCode.start(
+                    { facingMode: "environment" }, // Use rear camera
+                    {
+                        fps: 10,
+                        qrbox: { width: 250, height: 250 } // Size of the scanning box
+                    },
+                    onScanSuccess,  // Success callback
+                    onScanFailure   // Failure callback
+                ).catch(err => {
+                    alert("Error starting scanner. Please make sure you have a camera and have given permission.");
+                    console.error("Scanner start error:", err);
+                    stopScanner(); // Revert UI
+                });
+            } catch (err) {
+                 alert("Could not initialize scanner. " + err.message);
+                 stopScanner();
+            }
+        }
+
+        function stopScanner() {
+            document.getElementById('start-scan-btn').classList.remove('hidden');
+            document.getElementById('stop-scan-btn').classList.add('hidden');
+
+            if (html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    console.log("QR Code scanning stopped.");
+                }).catch((err) => {
+                    console.warn("Scanner stop failed, this is likely OK.", err);
+                }).finally(() => {
+                    // html5QrCode = null; // Don't nullify, so we can restart it
+                });
+            }
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            console.log(`Scan result: ${decodedText}`, decodedResult);
+            stopScanner();
+
+            // Parse the data string
+            // Expected format:
+            // Name: John Smith
+            // Designation: CEO
+            // Company: Acme Inc.
+            let name = 'N/A', designation = 'N/A', company = 'N/A';
+            const lines = decodedText.split('\n');
+            
+            lines.forEach(line => {
+                if (line.startsWith('Name: ')) {
+                    name = line.substring(6);
+                } else if (line.startsWith('Designation: ')) {
+                    designation = line.substring(13);
+                } else if (line.startsWith('Company: ')) {
+                    company = line.substring(9);
+                }
+            });
+
+            // Display the results
+            document.getElementById('result-name').textContent = name;
+            document.getElementById('result-designation').textContent = designation;
+            document.getElementById('result-company').textContent = company;
+            document.getElementById('qr-scan-result').classList.remove('hidden');
+        }
+
+        function onScanFailure(error) {
+            // This function is called continuously when no QR code is found
+            // We can ignore it for a cleaner console
+            // console.warn(`QR scan error: ${error}`);
+        }
+
+    </script>
+</body>
+</html>
